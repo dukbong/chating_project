@@ -162,7 +162,6 @@ class SimpleEntityTest {
     }
     
     @Test
-    @Transactional
     @DisplayName("A 사용자와 B 사용자가 C 채팅방에서 대화 후 A 사용자가 채팅방 삭제 시 C 채팅방에는 B 사용자의 대화 내용만 남아있다.")
     void chatDelete() {
     	String roomId = UUID.randomUUID().toString();
@@ -223,8 +222,11 @@ class SimpleEntityTest {
                 Map.of("username", "B", "message", "B1", "createdAt", chatMessageEntityB.getCreatedAt().toString()),
                 Map.of("username", "A", "message", "A2", "createdAt", chatMessageEntityA2.getCreatedAt().toString())
         );
+        
+        List<UserChatRoomEntity> findUserARoom = userChatRoomRepository.findByUserEntity(userA);
+        assertThat(findUserARoom).hasSize(1);
     	
-    	userChatRoomRepository.deleteById(userChatRoom1.getId());
+    	userChatRoomRepository.deleteById(findUserARoom.get(0).getId());
     	
     	List<UserChatRoomEntity> AfterDeleteUserChatRoomEntity = userChatRoomRepository.findByChatRoomEntity(chatRoom1);
     	
@@ -243,6 +245,8 @@ class SimpleEntityTest {
         .containsExactly(
             Map.of("username", "B", "message", "B1", "createdAt", chatMessageEntityB.getCreatedAt().toString())
         );
+        
+        
     	
     }
 
