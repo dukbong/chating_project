@@ -1,21 +1,27 @@
 package com.example.chating.entiry;
 
-import com.example.chating.entiry.repository.ChatMessageRepository;
-import com.example.chating.entiry.repository.ChatRoomRepository;
-import com.example.chating.entiry.repository.UserChatRoomRepository;
-import com.example.chating.entiry.repository.UserRepository;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import com.example.chating.entiry.repository.ChatMessageRepository;
+import com.example.chating.entiry.repository.ChatRoomRepository;
+import com.example.chating.entiry.repository.UserChatRoomRepository;
+import com.example.chating.entiry.repository.UserRepository;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.tuple;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @DataJpaTest
 @Transactional
 class SimpleEntityTest {
@@ -153,6 +159,91 @@ class SimpleEntityTest {
                         Map.of("username", "test2", "message", "test2가 전송한 메시지", "createdAt", chatMessageEntity2.getCreatedAt().toString())
                 );
 
+    }
+    
+    @Test
+    @Transactional
+    @DisplayName("A 사용자와 B 사용자가 C 채팅방에서 대화 후 A 사용자가 채팅방 삭제 시 C 채팅방에는 B 사용자의 대화 내용만 남아있다.")
+    void chatDelete() {
+    	String roomId = UUID.randomUUID().toString();
+    	UserEntity userA = simpleCreateUserEntity("A", "A1!");
+    	UserEntity userB = simpleCreateUserEntity("B", "B1!");
+    	UserChatRoomEntity userChatRoom1 = new UserChatRoomEntity();
+    	UserChatRoomEntity userChatRoom2 = new UserChatRoomEntity();
+    	ChatRoomEntity chatRoom1 = simpleCreateChatRoomEntity(roomId, "room1");
+    	
+    	userRepository.save(userA);
+    	userRepository.save(userB);
+    	
+    	chatRoomRepository.save(chatRoom1);
+    	
+    	userChatRoomRepository.save(userChatRoom1);
+    	userChatRoomRepository.save(userChatRoom2);
+    	
+    	userA.addUserChatRoom(userChatRoom1);
+    	chatRoom1.addUserChatRoomEntity(userChatRoom1);
+    	userB.addUserChatRoom(userChatRoom2);
+    	chatRoom1.addUserChatRoomEntity(userChatRoom2);
+    	
+    	ChatMessageEntity chatMessageEntityA1 = ChatMessageEntity.builder()
+    			.context("A1")
+    			.build();
+    	ChatMessageEntity chatMessageEntityA2 = ChatMessageEntity.builder()
+    			.context("A2")
+    			.build();
+    	ChatMessageEntity chatMessageEntityB = ChatMessageEntity.builder()
+    			.context("B1")
+    			.build();
+    	
+    	chatMessageRepository.save(chatMessageEntityA1);
+    	chatMessageRepository.save(chatMessageEntityB);
+    	chatMessageRepository.save(chatMessageEntityA2);
+    	
+    	userChatRoom1.addChatMessageEntity(chatMessageEntityA1);
+    	userChatRoom2.addChatMessageEntity(chatMessageEntityB);
+    	userChatRoom1.addChatMessageEntity(chatMessageEntityA2);
+    	
+    	List<UserChatRoomEntity> findUserChatRoomEntity = userChatRoomRepository.findByChatRoomEntity(chatRoom1);
+    	
+        List<Map<String, String>> result = findUserChatRoomEntity.stream()
+                .flatMap(userChatRoom -> userChatRoom.getChatMessageEntities().stream()
+                        .map(chatMessage -> Map.of(
+                                "username", userChatRoom.getUserEntity().getUsername(),
+                                "message", chatMessage.getContext(),
+                                "createdAt", chatMessage.getCreatedAt().toString() // createdAt도 추가
+                        ))
+                )
+                .sorted(Comparator.comparing(chatMap -> chatMap.get("createdAt")))
+                .toList();
+    	
+        // 테스트에서는 저장 시간이 같을 수 있기 떄문에 시간 순서로 테스트시 오류가 난다.
+        assertThat(result).hasSize(3)
+        .containsExactlyInAnyOrder(
+                Map.of("username", "A", "message", "A1", "createdAt", chatMessageEntityA1.getCreatedAt().toString()),
+                Map.of("username", "B", "message", "B1", "createdAt", chatMessageEntityB.getCreatedAt().toString()),
+                Map.of("username", "A", "message", "A2", "createdAt", chatMessageEntityA2.getCreatedAt().toString())
+        );
+    	
+    	userChatRoomRepository.deleteById(userChatRoom1.getId());
+    	
+    	List<UserChatRoomEntity> AfterDeleteUserChatRoomEntity = userChatRoomRepository.findByChatRoomEntity(chatRoom1);
+    	
+        List<Map<String, String>> result2 = AfterDeleteUserChatRoomEntity.stream()
+                .flatMap(userChatRoom -> userChatRoom.getChatMessageEntities().stream()
+                        .map(chatMessage -> Map.of(
+                                "username", userChatRoom.getUserEntity().getUsername(),
+                                "message", chatMessage.getContext(),
+                                "createdAt", chatMessage.getCreatedAt().toString() // createdAt도 추가
+                        ))
+                )
+                .sorted(Comparator.comparing(chatMap -> chatMap.get("createdAt")))
+                .toList();
+    	
+        assertThat(result2).hasSize(1)
+        .containsExactly(
+            Map.of("username", "B", "message", "B1", "createdAt", chatMessageEntityB.getCreatedAt().toString())
+        );
+    	
     }
 
     private UserEntity simpleCreateUserEntity(String username, String password) {
